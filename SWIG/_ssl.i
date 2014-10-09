@@ -315,13 +315,14 @@ void ssl_ctx_set_verify(SSL_CTX *ctx, int mode, PyObject *pyfunc) {
 }
 
 int ssl_ctx_set_session_id_context(SSL_CTX *ctx, PyObject *sid_ctx) {
-    const void *buf;
-    int len;
+    Py_buffer buf;
+    int ret;
 
-    if (m2_PyObject_AsReadBufferInt(sid_ctx, &buf, &len) == -1)
-        return -1;
-
-    return SSL_CTX_set_session_id_context(ctx, buf, len);
+    if (m2_PyObject_GetBufferInt(sid_ctx, &buf, PyBUF_SIMPLE) == -1)
+      return -1;
+    ret = SSL_CTX_set_session_id_context(ctx, buf.buf, buf.len);
+    m2_PyBuffer_Release(sid_ctx, &buf);
+    return ret;
 }
 
 void ssl_ctx_set_info_callback(SSL_CTX *ctx, PyObject *pyfunc) {
@@ -384,13 +385,15 @@ void ssl_set_client_CA_list_from_context(SSL *ssl, SSL_CTX *ctx) {
 }
 
 int ssl_set_session_id_context(SSL *ssl, PyObject *sid_ctx) {
-    const void *buf;
-    int len;
+    Py_buffer buf;
+    int ret;
 
-    if (m2_PyObject_AsReadBufferInt(sid_ctx, &buf, &len) == -1)
-        return -1;
+    if (m2_PyObject_GetBufferInt(sid_ctx, &buf, PyBUF_SIMPLE) == -1)
+      return -1;
 
-    return SSL_set_session_id_context(ssl, buf, len);
+    ret = SSL_set_session_id_context(ssl, buf.buf, buf.len);
+    m2_PyBuffer_Release(sid_ctx, &buf);
+    return ret;
 }
 
 int ssl_set_fd(SSL *ssl, int fd) {
@@ -583,17 +586,14 @@ PyObject *ssl_read_nbio(SSL *ssl, int num) {
 }
 
 int ssl_write(SSL *ssl, PyObject *blob) {
-    const void *buf;
-    int len, r, err, ret;
+    int r, err, ret;
+    Py_buffer buf;
 
-
-    if (m2_PyObject_AsReadBufferInt(blob, &buf, &len) == -1) {
+    if (m2_PyObject_GetBufferInt(blob, &buf, PyBUF_SIMPLE) == -1)
         return -1;
-    }
 
-    
     Py_BEGIN_ALLOW_THREADS
-    r = SSL_write(ssl, buf, len);
+    r = SSL_write(ssl, buf.buf, buf.len);
     Py_END_ALLOW_THREADS
 
 
@@ -623,22 +623,19 @@ int ssl_write(SSL *ssl, PyObject *blob) {
             ret = -1;
     }
     
-    
+    m2_PyBuffer_Release(blob, &buf);
     return ret;
 }
 
 int ssl_write_nbio(SSL *ssl, PyObject *blob) {
-    const void *buf;
-    int len, r, err, ret;
+    int r, err, ret;
+    Py_buffer buf;
 
-
-    if (m2_PyObject_AsReadBufferInt(blob, &buf, &len) == -1) {
+    if (m2_PyObject_GetBufferInt(blob, &buf, PyBUF_SIMPLE) == -1)
         return -1;
-    }
-
     
     Py_BEGIN_ALLOW_THREADS
-    r = SSL_write(ssl, buf, len);
+    r = SSL_write(ssl, buf.buf, buf.len);
     Py_END_ALLOW_THREADS
     
     
@@ -667,7 +664,7 @@ int ssl_write_nbio(SSL *ssl, PyObject *blob) {
             ret = -1;
     }
     
-    
+    m2_PyBuffer_Release(blob, &buf);
     return ret;
 }
 
