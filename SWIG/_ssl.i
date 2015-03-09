@@ -16,7 +16,9 @@
 #include <openssl/dh.h>
 #include <openssl/ssl.h>
 #include <openssl/x509.h>
+#ifdef HAVE_POLL
 #include <poll.h>
+#endif
 #include <sys/time.h>
 %}
 
@@ -416,6 +418,35 @@ int ssl_set_fd(SSL *ssl, int fd) {
     return ret;
 }
 
+#ifdef _WIN32
+
+/* gettimeofday polyfill for win32. This is ms-level accurate. */ 
+
+/* FILETIME of Jan 1 1970 00:00:00. */
+static const unsigned __int64 epoch = UINT64CONST(116444736000000000);
+
+/*
+ */
+static int
+gettimeofday(struct timeval * tp, struct timezone * tzp)
+{
+    FILETIME    file_time;
+    SYSTEMTIME  system_time;
+    ULARGE_INTEGER ularge;
+
+    GetSystemTime(&system_time);
+    SystemTimeToFileTime(&system_time, &file_time);
+    ularge.LowPart = file_time.dwLowDateTime;
+    ularge.HighPart = file_time.dwHighDateTime;
+
+    tp->tv_sec = (long) ((ularge.QuadPart - epoch) / 10000000L);
+    tp->tv_usec = (long) (system_time.wMilliseconds * 1000);
+
+    return 0;
+}
+
+#endif /* _WIN32 */
+
 static void ssl_handle_error(int ssl_err, int ret) {
     int err;
 
@@ -442,12 +473,12 @@ static void ssl_handle_error(int ssl_err, int ret) {
 
 static int ssl_sleep_with_timeout(SSL *ssl, const struct timeval *start,
                                   double timeout, int ssl_err) {
-    struct pollfd fd;
     struct timeval tv;
     int ms, tmp;
 
     assert(timeout > 0);
  again:
+
     gettimeofday(&tv, NULL);
     /* tv >= start */
     if ((timeout + start->tv_sec - tv.tv_sec) > INT_MAX / 1000)
@@ -466,30 +497,68 @@ static int ssl_sleep_with_timeout(SSL *ssl, const struct timeval *start,
                 goto timeout;
         }
     }
-    switch (ssl_err) {
-	    case SSL_ERROR_WANT_READ:
-            fd.fd = SSL_get_rfd(ssl);
-            fd.events = POLLIN;
-            break;
 
-	    case SSL_ERROR_WANT_WRITE:
-            fd.fd = SSL_get_wfd(ssl);
-            fd.events = POLLOUT;
-            break;
+#ifdef HAVE_POLL
+    {
+        struct pollfd fd;
+        switch (ssl_err) {
+            case SSL_ERROR_WANT_READ:
+                fd.fd = SSL_get_rfd(ssl);
+                fd.events = POLLIN;
+                break;
 
-	    case SSL_ERROR_WANT_X509_LOOKUP:
-            return 0; /* FIXME: is this correct? */
+            case SSL_ERROR_WANT_WRITE:
+                fd.fd = SSL_get_wfd(ssl);
+                fd.events = POLLOUT;
+                break;
 
-	    default:
-            assert(0);
+            case SSL_ERROR_WANT_X509_LOOKUP:
+                return 0; /* FIXME: is this correct? */
+
+            default:
+                assert(0);
+        }
+        if (fd.fd == -1) {
+            PyErr_SetString(_ssl_err, "timeout on a non-FD SSL");
+            return -1;
+        }
+        Py_BEGIN_ALLOW_THREADS
+        tmp = poll(&fd, 1, ms);
+        Py_END_ALLOW_THREADS
     }
-    if (fd.fd == -1) {
-        PyErr_SetString(_ssl_err, "timeout on a non-FD SSL");
-        return -1;
+#else /* HAVE_POLL */
+    {
+        /* use select() instead of poll() */
+        fd_set fds;
+        FD_ZERO(&fds);
+        struct timeval tv_timeout;
+        tv_timeout.tv_sec = ms / 1000;
+        tv_timeout.tv_usec = (ms % 1000) * 1000;
+
+        switch (ssl_err) {
+            case SSL_ERROR_WANT_READ:
+                int fd = SSL_get_rfd(ssl);
+                FD_SET(fd, &fds);
+                Py_BEGIN_ALLOW_THREADS
+                tmp = select(fd+1, &fds, NULL, NULL, &tv_timeout);
+                Py_END_ALLOW_THREADS
+                break;
+            case SSL_ERROR_WANT_WRITE:
+                int fd = SSL_get_wfd(ssl);
+                FD_SET(fd, &fds);
+                Py_BEGIN_ALLOW_THREADS
+                tmp = select(fd+1, NULL, &fds, NULL, &tv_timeout);
+                Py_END_ALLOW_THREADS
+                break;
+            case SSL_ERROR_WANT_X509_LOOKUP:
+                return 0; /* FIXME: is this correct? */
+
+            default:
+                assert(0);
+        }
     }
-    Py_BEGIN_ALLOW_THREADS
-    tmp = poll(&fd, 1, ms);
-    Py_END_ALLOW_THREADS
+#endif /* HAVE_POLL */
+ 
     switch (tmp) {
     	case 1:
             return 0;
