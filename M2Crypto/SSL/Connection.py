@@ -39,6 +39,7 @@ class Connection:
     m2_ssl_free = m2.ssl_free
     
     def __init__(self, ctx, sock=None, family=socket.AF_INET):
+        self._io_refs = 0
         self.ctx = ctx
         self.ssl = m2.ssl_new(self.ctx.ctx)
         if sock is not None:
@@ -68,6 +69,11 @@ class Connection:
         self.socket.close()
 
     def close(self):
+        self._closed = True
+        if self._io_refs <= 0:
+            self._real_close()
+
+    def _real_close(self):
         m2.ssl_shutdown(self.ssl)
 
     def clear(self):
@@ -228,6 +234,12 @@ class Connection:
         return self._read_nbio(size)
     recv = read
 
+    #def recv_into(self, buffer, nbytes=0):
+    #    # We need this method to look like a proper socket, but it doesn't 
+    #    # actually read directly into the buffer as m2 doesn't expose
+    #    # a method for doing that.
+    #    buffer = self.read(nbytes or len(buffer))
+
     def setblocking(self, mode):
         """Set this connection's underlying socket to _mode_."""
         self.socket.setblocking(mode)
@@ -324,7 +336,41 @@ class Connection:
         return m2.ssl_set_cipher_list(self.ssl, cipher_list)
 
     def makefile(self, mode='rb', bufsize=-1):
-        return socket._fileobject(self, mode, bufsize)
+        if hasattr(socket, "_fileobject"):
+            # python 2
+            return socket._fileobject(self, mode, bufsize)
+
+        # adapted from socket.py in python 3.4.2
+        import io
+        for c in mode:
+            if c not in {"r", "w", "b"}:
+                raise ValueError("invalid mode %r (only r, w, b allowed)")
+        writing = "w" in mode
+        reading = "r" in mode or not writing
+        assert reading or writing
+        binary = "b" in mode
+        rawmode = ""
+        if reading:
+            rawmode += "r"
+        if writing:
+            rawmode += "w"
+        from socket import SocketIO
+        raw = SocketIO(self, rawmode)
+        self._io_refs += 1
+        return raw
+        if reading and writing:
+            buffer = io.BufferedRWPair(raw, raw)
+        elif reading:
+            buffer = io.BufferedReader(raw)
+        else:
+            assert writing
+            buffer = io.BufferedWriter(raw)
+        if binary:
+            print(buffer)
+            return buffer
+        text = io.TextIOWrapper(buffer, encoding, errors, newline)
+        text.mode = mode
+        return text
 
     def getsockname(self):
         return self.socket.getsockname()

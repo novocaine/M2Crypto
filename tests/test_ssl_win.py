@@ -7,7 +7,7 @@ on your PATH.
 
 Copyright (c) 2000-2001 Ng Pheng Siong. All rights reserved."""
 
-import os, os.path, string, time, unittest
+import os, os.path, time, unittest
 try:
     import win32process
 except ImportError:
@@ -15,7 +15,7 @@ except ImportError:
 
 if win32process:
     from M2Crypto import Rand, SSL
-    from . import test_ssl
+    from . import posix_base_ssl_client
 
     def find_openssl():
         plist = os.environ['PATH'].split(';')
@@ -28,11 +28,7 @@ if win32process:
                 pass
         return None
 
-
-    srv_host = 'localhost'
-    srv_port = 64000
-
-    class SSLWinClientTestCase(test_ssl.SSLClientTestCase):
+    class SSLWinClientTestCase(posix_base_ssl_client.PosixSSLClientTestCase):
 
         startupinfo = win32process.STARTUPINFO()
         openssl = find_openssl()
@@ -43,10 +39,11 @@ if win32process:
             os.chdir('tests')
             try:
                 hproc, hthread, pid, tid = win32process.CreateProcess(self.openssl,
-                    string.join(args), None, None, 0, win32process.DETACHED_PROCESS,
+                    ' '.join(args), None, None, 0, win32process.DETACHED_PROCESS,
                     None, None, self.startupinfo)
             finally:
                 os.chdir('..')
+
             time.sleep(0.3)
             return hproc
 

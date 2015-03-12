@@ -47,13 +47,10 @@ def suite():
         #'tests.test_smime',
         #'tests.test_ssl_offline',
         'tests.test_threading',
-        #'tests.test_x509'
+        #'tests.test_x509',
+        'tests.test_ssl'
     ]
-    if os.name == 'posix':
-        modules_to_test.append('tests.test_ssl')
-        pass
-    elif os.name == 'nt':
-        modules_to_test.append('tests.test_ssl_win')
+
     if m2.OPENSSL_VERSION_NUMBER >= 0x90800F and m2.OPENSSL_NO_EC == 0:
         #modules_to_test.append('tests.test_ecdh')
         #modules_to_test.append('tests.test_ecdsa')

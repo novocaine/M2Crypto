@@ -36,8 +36,10 @@ class _M2CryptoBuildExt(build_ext.build_ext):
         # openssl is the attribute corresponding to openssl directory prefix
         # command line option
         if os.name == 'nt':
-            self.libraries = ['ssleay32', 'libeay32']
-            self.openssl = 'c:\\\openssl'
+            self.libraries = ['ssleay32', 'libeay32', 'Ws2_32', 'user32', 'gdi32',
+                    'Advapi32', 'Crypt32']
+            instdir = os.path.abspath(os.path.dirname(sys.argv[0]))
+            self.openssl = r'C:\Users\James.Salter\Downloads\openssl-1.0.1i'
         else:
             self.libraries = ['ssl', 'crypto']
             self.openssl = '/usr'
@@ -109,5 +111,11 @@ interface.''',
 
       ext_modules = [m2crypto],
       test_suite='tests.alltests.suite',
-      cmdclass = {'build_ext': _M2CryptoBuildExt}
+      cmdclass = {'build_ext': _M2CryptoBuildExt},
+      data_files = [
+          ('M2Crypto', [
+              'C:\\xplanbase\\build\\vc100/openssl-1.0.0n-bin/bin/ssleay32.dll',
+              'C:\\xplanbase\\build\\vc100/openssl-1.0.0n-bin/bin/libeay32.dll',
+              ]),
+          ],
       )

@@ -19,7 +19,9 @@
 #ifdef HAVE_POLL
 #include <poll.h>
 #endif
+#ifndef _WIN32
 #include <sys/time.h>
+#endif
 %}
 
 %apply Pointer NONNULL { SSL_CTX * };
@@ -423,7 +425,7 @@ int ssl_set_fd(SSL *ssl, int fd) {
 /* gettimeofday polyfill for win32. This is ms-level accurate. */ 
 
 /* FILETIME of Jan 1 1970 00:00:00. */
-static const unsigned __int64 epoch = UINT64CONST(116444736000000000);
+static const unsigned __int64 epoch = 116444736000000000LL;
 
 /*
  */
@@ -530,26 +532,30 @@ static int ssl_sleep_with_timeout(SSL *ssl, const struct timeval *start,
     {
         /* use select() instead of poll() */
         fd_set fds;
-        FD_ZERO(&fds);
         struct timeval tv_timeout;
+        FD_ZERO(&fds);
         tv_timeout.tv_sec = ms / 1000;
         tv_timeout.tv_usec = (ms % 1000) * 1000;
 
         switch (ssl_err) {
             case SSL_ERROR_WANT_READ:
-                int fd = SSL_get_rfd(ssl);
-                FD_SET(fd, &fds);
-                Py_BEGIN_ALLOW_THREADS
-                tmp = select(fd+1, &fds, NULL, NULL, &tv_timeout);
-                Py_END_ALLOW_THREADS
-                break;
+                {
+                    int fd = SSL_get_rfd(ssl);
+                    FD_SET(fd, &fds);
+                    Py_BEGIN_ALLOW_THREADS
+                    tmp = select(fd+1, &fds, NULL, NULL, &tv_timeout);
+                    Py_END_ALLOW_THREADS
+                    break;
+                }
             case SSL_ERROR_WANT_WRITE:
-                int fd = SSL_get_wfd(ssl);
-                FD_SET(fd, &fds);
-                Py_BEGIN_ALLOW_THREADS
-                tmp = select(fd+1, NULL, &fds, NULL, &tv_timeout);
-                Py_END_ALLOW_THREADS
-                break;
+                {
+                    int fd = SSL_get_wfd(ssl);
+                    FD_SET(fd, &fds);
+                    Py_BEGIN_ALLOW_THREADS
+                    tmp = select(fd+1, NULL, &fds, NULL, &tv_timeout);
+                    Py_END_ALLOW_THREADS
+                    break;
+                }
             case SSL_ERROR_WANT_X509_LOOKUP:
                 return 0; /* FIXME: is this correct? */
 
